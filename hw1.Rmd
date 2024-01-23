@@ -1,0 +1,379 @@
+---
+title: "Homework1"
+author: "Jonathan Day"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(viridis)
+library(babynames)
+library(readr)
+theme_set(theme_bw())
+```
+
+```{r}
+columns <- c("status", "ssn", "last_name", "name_suffix", "first_name", "middle_name",
+             "vp_code", "death_date", "birth_date", "blanks1", "blanks2",
+             "blanks3", "blanks4", "blanks5")
+
+layout <- fwf_widths(c(1, 9, 20, 4, 15, 15, 1, 8, 8, 2, 5, 5, 5, 7),
+                     col_names = columns)
+
+ssdm1 <- read_fwf("ssdm1", layout, n_max = 1000000) 
+ssdm2 <- read_fwf("ssdm2", layout, n_max = 1000000) 
+ssdm3 <- read_fwf("ssdm3", layout, n_max = 1000000) 
+```
+
+```{r}
+ssdm1 %>% select(first_name, death_date, birth_date) -> ssdm1.cleaned
+ssdm2 %>% select(first_name, death_date, birth_date) -> ssdm2.cleaned
+ssdm3 %>% select(first_name, death_date, birth_date) -> ssdm3.cleaned
+```
+
+```{r}
+ssdm <- bind_rows(ssdm1.cleaned,ssdm2.cleaned,ssdm3.cleaned)
+```
+
+```{r}
+parse_mmddyyyy <- function(date_string) {
+  # Replace '00' day with '01'
+  date_string <- ifelse(substr(date_string, 3, 4) == "00", 
+           paste0(substr(date_string, 1, 2), "01", substr(date_string, 5, 8)),
+           date_string)
+  mdy(date_string)
+}
+
+parse_mmddyyyy(c("12001970", c("01001980")))
+```
+
+```{r}
+ssdm %>% select(first_name, ends_with("date")) %>% 
+    mutate(
+        across(ends_with("date"), parse_mmddyyyy),
+    ) %>% print ->
+    ssdm_cleaned
+filter(ssdm_cleaned, year(birth_date) != 0) -> ssdm_cleaned.1
+ssdm_cleaned.1$Age <- year(ssdm_cleaned.1$death_date) - year(ssdm_cleaned.1$birth_date)
+```
+
+The data I have now is first name, death date, and birth date in a dataframe, in addition to the babynames library I can load gender as well.
+
+For prediction, I need to narrow the focus in on a specific name as input: - obtain list by year of numbers of people with that name alive in that year and how old they are. - From there I can fix the year someone is asking the question (ie its 2010 and I meet a Frank)
+
+-   Then using my list of Franks that are all still alive today I can predict the average age?
+
+To make data wrangling easier I will select a random sample of 100000 for testing ideas
+
+```{r}
+ssdm_cleaned.1 %>% filter(first_name == "ROBERT") %>% ggplot(aes(x=year,y=alive)) + geom_density()
+```
+
+```{r}
+name = 'JONATHAN'
+
+ssdm_cleaned.1 %>% filter(first_name == name, year(death_date)>2000) %>% 
+    drop_na(birth_date, death_date) %>% 
+    rowwise() %>% 
+    mutate(year = list(year(birth_date):year(death_date))) %>% 
+    unnest(year) %>%
+    group_by(first_name, year) %>% 
+    summarise(alive = n(), .groups = 'drop') %>% 
+    ggplot(aes(x=year,y=alive)) + geom_line() + ggtitle(name)
+
+```
+
+```{r}
+name = 'ELSIE'
+
+ssdm_cleaned.1 %>% filter(first_name == name, year(death_date)>2010) %>% 
+    drop_na(birth_date, death_date) %>% 
+    rowwise() %>% 
+    mutate(year = list(year(birth_date):year(death_date))) %>% 
+    unnest(year) %>%
+    group_by(first_name, year) %>% 
+    summarise(alive = n(), .groups = 'drop') %>% 
+    ggplot(aes(x=year, y=alive)) + geom_line()
+```
+
+
+```{r}
+name = 'ELSIE'
+
+ssdm_cleaned.1 %>% filter(first_name == name, year(death_date)>2000) %>% 
+    drop_na(birth_date, death_date) %>% 
+    rowwise() %>% 
+    mutate(year = list(year(birth_date):year(death_date))) %>% 
+    unnest(year) %>%
+    group_by(first_name, year) %>% 
+    summarise(alive = n(), .groups = 'drop') %>% 
+    ggplot(aes(x=year, y=alive)) + geom_line()
+```
+
+
+```{r}
+name = 'MARCELINE'
+
+ssdm_cleaned.1 %>% filter(first_name == name, year(death_date)>2000) %>% 
+    drop_na(birth_date, death_date) %>% 
+    rowwise() %>% 
+    mutate(year = list(year(birth_date):year(death_date))) %>% 
+    unnest(year) %>%
+    group_by(first_name, year) %>% 
+    summarise(alive = n(), .groups = 'drop') %>% 
+    ggplot(aes(x=year, y=alive)) + geom_line()
+```
+```{r}
+library(babynames)
+
+babynames %>% filter(name == "Elsie", sex == "F") %>% ggplot + 
+    geom_line(aes(x=year, y=n))
+```
+```{r}
+library(babynames)
+
+babynames %>% filter(name == "Royce", sex == "M") %>% ggplot + 
+    geom_line(aes(x=year, y=n))
+```
+```{r}
+set.seed(2020)
+top_male_names <- babynames %>%
+  filter(sex == "M") %>%
+  top_n(500, wt = n) %>%
+  sample_n(4)
+
+# Filter the top 500 female names
+top_female_names <- babynames %>%
+  filter(sex == "F") %>%
+  top_n(500, wt = n) %>%
+  sample_n(4)
+
+babynames %>% filter(
+  (sex == "M" & name %in% top_male_names$name) |
+    sex == "F" & name %in% top_female_names$name
+) %>% ggplot(aes(x = year, y = prop, group = name, color=name)) + geom_line(size=1) +
+  ggtitle("Sample of 4 Male and 4 Female Top 500 Names") +
+  xlab("Year") + ylab("Proportion")  +
+  scale_color_viridis(discrete = TRUE)
+```
+```{r}
+unique_names <- babynames %>% group_by(year) %>% 
+  summarize(unique_names_count = n_distinct(name))
+pop_sum <- babynames %>% group_by(year) %>% 
+  summarize(population = sum(n))
+cor(unique_names$unique_names_count,pop_sum$population)
+```
+
+```{r}
+set.seed(2025)
+name_ex <- babynames %>%
+  filter(sex %in% c("M", "F")) %>%
+  group_by(sex) %>% top_n(500) %>%
+  sample_n(2)
+
+# Filter the babynames dataset for the sampled names
+filtered_data <- babynames %>% 
+  filter(name %in% name_ex$name)
+
+# Create a ggplot to plot the popularity of the sampled names
+ggplot(filtered_data, aes(x = year, y = n, color = interaction(name, sex))) +
+  geom_line() +
+  labs(title = "Popularity of Baby Names Over Time",
+       x = "Year",
+       y = "Number of occurrences",
+       color = "Name")
+```
+
+```{r}
+babynames %>%
+  summarize(unique_names_count = n_distinct(name))
+```
+
+
+
+```{r}
+read_csv('United States Population by Age and Sex.csv', skip=1) %>% 
+    slice(1:101) %>% mutate(
+        across(everything(), 
+               \(x) str_replace_all(string = x, 
+                                    pattern = "[^\\d.]*", 
+                                    replacement = "") %>% as.numeric
+               )
+        ) -> age_structure
+```
+
+
+```{r}
+age_structure %>% 
+    pivot_longer(cols=2:3, values_to = "Percent of population") %>%
+    ggplot(aes(x=Age, y=`Percent of population`, color = name)) +
+    geom_line()
+```
+
+```{r}
+age_structure %>% mutate(birth_year = 2022 - Age) %>% 
+    left_join(filter(babynames, name == "John", sex == "M"), 
+               by=c("birth_year" = "year")) %>% 
+    mutate(p = prop * `Male % of Population`, p = p / sum(p, na.rm = T)) %>% 
+    ggplot(aes(x = birth_year, y=p)) + geom_line()
+```
+
+
+```{r}
+result <- age_structure %>%
+  mutate(birth_year = 2022 - Age) %>%
+  left_join(filter(babynames, name == "Jonathan", sex == "M"), 
+             by = c("birth_year" = "year")) %>%
+  mutate(p = prop * `Male % of Population`, p = p / sum(p, na.rm = TRUE)) %>%
+  ggplot(aes(x = birth_year, y = p)) +
+  geom_line()
+
+# Extract the index of the maximum value of the vector p
+max_index <- which.max(result$data$p)
+
+# Extract the corresponding year
+max_year <- result$data$birth_year[max_index]
+
+# Extract the maximum value
+max_p <- result$data$p[max_index]
+
+# Print the results
+cat("Maximum value of p:", max_p, "\n")
+cat("Associated year:", max_year, "\n")
+
+# Compute the variance of the p vector
+variance_p <- var(result$data$p, na.rm = TRUE)
+
+# Print the variance
+cat("Variance of p:", variance_p, "\n")
+```
+
+```{r}
+alpha = 0.05; q.alpha = qchisq(1-alpha,1);
+q.alpha
+
+```
+
+
+```{r}
+adj_structure <- age_structure %>% mutate(birth_year = 2022 - Age) %>% 
+    left_join(filter(babynames, name == "Elsie", sex == "F"), 
+               by=c("birth_year" = "year")) %>% 
+    mutate(p = prop * `Female % of Population`, p = p / sum(p, na.rm = T)) %>% 
+  drop_na()
+
+max.index <- which.max(adj_structure$p)
+max.p <- adj_structure$p[max.index]
+max.year <- adj_structure$Age[max.index]
+chg <- sd(adj_structure$p)
+tol <- max.p-chg
+output <- adj_structure %>% filter(p > tol) %>% select(Age);
+mass <- adj_structure %>% filter(p > tol) %>% summarize(sum(p))
+          
+cat("Maximum value of p:", max.p, "\n")
+cat("Age:", max.year, "\n")
+print(mass)
+print(output)
+
+ggplot(data=adj_structure) + geom_line(aes(x=Age, y=p)) +
+  geom_hline(yintercept=tol, linetype='dashed', color='red') + 
+  ggtitle('Age Probability of the Name Elsie') + ylab('Probability')
+```
+```{r}
+adj_structure %>% filter(p > tol) %>% summarise(sum(p))
+```
+
+
+```{r}
+kde <- function(x, sampling=seq(-10,10,length.out=100)){
+    #get number of points
+    n = dim(age_structure)[1]
+    #determine bandwidth
+    h = (4/3)**0.2 * sd(x) * n**(-0.2)
+    #generate the basis for the kde function
+    bases = data.frame()
+    for (x_i in x) {
+      bases = rbind(bases,pnorm(sampling, mean = x_i, sd=h))
+    }
+    #then sum horizontally
+    bases_summed = bases
+    #final normalize by the number of points in x
+    kde_line = bases_summed/n
+    result_list <- list(sampling = sampling, kde_line = kde_line)
+    return(result_list)
+}
+```
+
+```{r}
+kde(adj_structure$p,sampling=seq(min(adj_structure$Age),max(adj_structure$Age),length.out=length(adj_structure$Age)))
+```
+
+
+```{r}
+library(mclust)
+mix_model <- Mclust(age_structure$Age, G = 2)  # Assuming 2 components in the mixture
+
+# Extract the parameters of the fitted mixture model
+means <- mix_model$parameters$mean
+sds <- sqrt(mix_model$parameters$variance)
+weights <- mix_model$parameters$pro
+cluster_probs <- matrix(apply(mix_model$z, 1, function(x) sum(x == 1)), ncol = 1)
+
+# Generate a sequence of values for the x-axis
+x_seq <- seq(min(age_structure$Age), max(age_structure$Age), length.out = 1000)
+
+# Calculate the mixture model density for each value in the x-axis sequence
+mixture_density <- rowSums(outer(x_seq, means, function(x, mu) {
+  dnorm(x, mean = mu, sd = sds)
+}) * weights * cluster_probs)
+
+# Create a plot of the mixture model KDE
+ggplot(data.frame(x = x_seq, density = mixture_density), aes(x = x, y = density)) +
+  geom_line(color = "blue", size = 1) +
+  labs(title = "Mixture Model KDE of Age", x = "Age", y = "Density")
+```
+
+
+```{r}
+pred_age <- function(name, G, year_ask) {
+  read_csv('United States Population by Age and Sex.csv', skip=1) %>% 
+      slice(1:101) %>% mutate(
+          across(everything(), 
+                 \(x) str_replace_all(string = x, 
+                                      pattern = "[^\\d.]*", 
+                                      replacement = "") %>% as.numeric
+                 )
+          ) -> age_structure
+  
+  adj_structure <- age_structure %>% mutate(birth_year = year_ask - Age) %>% 
+      left_join(filter(babynames, name == name, sex == G), 
+                 by=c("birth_year" = "year")) %>% 
+      mutate(p = prop * `Female % of Population`, p = p / sum(p, na.rm = T)) %>% 
+    drop_na()
+  
+  max.index <- which.max(adj_structure$p)
+  max.p <- adj_structure$p[max.index]
+  max.year <- adj_structure$Age[max.index]
+  chg <- std(adj_structure$p)
+  tol <- max.p-chg
+  output <- adj_structure %>% filter(p > tol) %>% select(Age)
+  
+  cat("Maximum value of p:", max.p, "\n")
+  cat("Age:", max.year, "\n")
+  output
+  
+  ggplot(data=adj_structure) + geom_line(aes(x=Age, y=p)) + geom_hline(yintercept=tol, color='red')
+}
+```
+
+```{r}
+pred_age('Marceline', 'F', 2010)
+```
+
+
+
+
+
+
